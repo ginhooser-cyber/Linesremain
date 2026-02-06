@@ -39,6 +39,7 @@ export const MainMenu: React.FC = () => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [offlineHover, setOfflineHover] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -75,7 +76,7 @@ export const MainMenu: React.FC = () => {
       setAuth(json.accessToken, json.player.username);
       setScreen('loading');
     } catch {
-      setError('Network error. Please try again.');
+      setError('Server unavailable. Use "Play Offline" below to play without a server.');
     } finally {
       setLoading(false);
     }
@@ -179,6 +180,26 @@ export const MainMenu: React.FC = () => {
                   : 'Create Account'}
             </button>
           </form>
+
+          {/* Divider */}
+          <div style={styles.divider}>
+            <span style={styles.dividerText}>or</span>
+          </div>
+
+          {/* Play Offline */}
+          <button
+            style={{
+              ...styles.offlineBtn,
+              ...(offlineHover ? styles.offlineBtnHover : {}),
+            }}
+            onMouseEnter={() => setOfflineHover(true)}
+            onMouseLeave={() => setOfflineHover(false)}
+            onClick={() => {
+              setScreen('playing');
+            }}
+          >
+            ▶ Play Offline
+          </button>
         </div>
       </div>
     </div>
@@ -296,5 +317,41 @@ const styles: Record<string, React.CSSProperties> = {
     letterSpacing: '1px',
     textTransform: 'uppercase',
     fontFamily: 'var(--font-ui)',
+  },
+  divider: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    margin: '20px 0 16px',
+  },
+  dividerText: {
+    flex: 1,
+    textAlign: 'center',
+    color: 'var(--text-faint)',
+    fontSize: '13px',
+    letterSpacing: '2px',
+    textTransform: 'uppercase',
+  },
+  offlineBtn: {
+    width: '100%',
+    padding: '14px',
+    background: 'rgba(255,255,255,0.05)',
+    border: '1px solid var(--border-subtle)',
+    borderRadius: '8px',
+    color: 'var(--text-muted)',
+    fontSize: '14px',
+    fontWeight: 600,
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    letterSpacing: '1px',
+    textTransform: 'uppercase',
+    fontFamily: 'var(--font-ui)',
+  },
+  offlineBtnHover: {
+    background: 'rgba(240,165,0,0.15)',
+    borderColor: 'var(--accent)',
+    color: 'var(--accent)',
+    transform: 'scale(1.02)',
+    boxShadow: '0 0 12px rgba(240,165,0,0.2)',
   },
 };

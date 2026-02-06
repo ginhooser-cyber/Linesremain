@@ -1,11 +1,20 @@
 // ─── Game Canvas ───
+// Wires up the full game session: Engine, ChunkManager, Player Controller,
+// Particle System, Animation System, and Camera.
 
 import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { Engine } from '../../engine/Engine';
 import { CameraController } from '../../engine/Camera';
 import { InputManager } from '../../engine/InputManager';
+import { ParticleSystem } from '../../engine/ParticleSystem';
+import { ChunkManager } from '../../world/ChunkManager';
+import { PlayerRenderer } from '../../entities/PlayerRenderer';
+import { LocalPlayerController } from '../../entities/LocalPlayerController';
+import { AnimationSystem } from '../../systems/AnimationSystem';
+import { generateSpriteSheet } from '../../assets/SpriteGenerator';
 import { useGameStore } from '../../stores/useGameStore';
+import { SEA_LEVEL } from '@shared/constants/game';
 
 // ─── Scene Setup Helpers ───
 
@@ -30,213 +39,128 @@ function createLighting(scene: THREE.Scene): void {
   scene.add(hemisphereLight);
 }
 
-function createGround(scene: THREE.Scene): void {
-  const groundGeo = new THREE.PlaneGeometry(200, 200);
-  const groundMat = new THREE.MeshStandardMaterial({
-    color: 0x4a7c3f,
-    roughness: 0.9,
-    metalness: 0.0,
-  });
-  const ground = new THREE.Mesh(groundGeo, groundMat);
-  ground.rotation.x = -Math.PI / 2;
-  ground.receiveShadow = true;
-  scene.add(ground);
-
-  const grid = new THREE.GridHelper(200, 50, 0x3a6b30, 0x3a6b30);
-  grid.position.y = 0.01;
-  (grid.material as THREE.Material).opacity = 0.3;
-  (grid.material as THREE.Material).transparent = true;
-  scene.add(grid);
-}
-
-function createPlayerMesh(scene: THREE.Scene): THREE.Mesh {
-  const playerGeo = new THREE.BoxGeometry(1, 2, 1);
-  const playerMat = new THREE.MeshStandardMaterial({
-    color: 0xf0a500,
-    roughness: 0.6,
-    metalness: 0.1,
-  });
-  const playerMesh = new THREE.Mesh(playerGeo, playerMat);
-  playerMesh.position.set(0, 1, 0);
-  playerMesh.castShadow = true;
-  scene.add(playerMesh);
-  return playerMesh;
-}
-
-function createEnvironment(scene: THREE.Scene): void {
-  const blockGeo = new THREE.BoxGeometry(1, 1, 1);
-  const blockMat = new THREE.MeshStandardMaterial({ color: 0x8b7355, roughness: 0.8 });
-  const stoneMat = new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.9 });
-  const treeTrunkMat = new THREE.MeshStandardMaterial({ color: 0x6b4226, roughness: 0.9 });
-  const treeLeafMat = new THREE.MeshStandardMaterial({ color: 0x2d5a1e, roughness: 0.8 });
-
-  // Scatter some blocks
-  const blockPositions = [
-    { x: 5, z: 3, mat: blockMat },
-    { x: 6, z: 3, mat: blockMat },
-    { x: 5, z: 4, mat: blockMat },
-    { x: -4, z: -6, mat: stoneMat },
-    { x: -3, z: -6, mat: stoneMat },
-    { x: -4, z: -5, mat: stoneMat },
-    { x: -3, z: -5, mat: stoneMat },
-    { x: -4, z: -6, mat: stoneMat, y: 1 },
-  ];
-
-  for (const bp of blockPositions) {
-    const block = new THREE.Mesh(blockGeo, bp.mat);
-    block.position.set(bp.x, (bp.y ?? 0) + 0.5, bp.z);
-    block.castShadow = true;
-    block.receiveShadow = true;
-    scene.add(block);
-  }
-
-  // Simple trees
-  const treePositions = [
-    { x: -8, z: 5 },
-    { x: 10, z: -4 },
-    { x: -3, z: 12 },
-    { x: 15, z: 8 },
-    { x: -12, z: -10 },
-  ];
-
-  for (const tp of treePositions) {
-    const trunkGeo = new THREE.BoxGeometry(1, 4, 1);
-    const trunk = new THREE.Mesh(trunkGeo, treeTrunkMat);
-    trunk.position.set(tp.x, 2, tp.z);
-    trunk.castShadow = true;
-    scene.add(trunk);
-
-    for (let lx = -1; lx <= 1; lx++) {
-      for (let ly = 0; ly <= 2; ly++) {
-        for (let lz = -1; lz <= 1; lz++) {
-          if (ly === 2 && Math.abs(lx) + Math.abs(lz) > 1) continue;
-          const leaf = new THREE.Mesh(blockGeo, treeLeafMat);
-          leaf.position.set(tp.x + lx, 4 + ly + 0.5, tp.z + lz);
-          leaf.castShadow = true;
-          leaf.receiveShadow = true;
-          scene.add(leaf);
-        }
-      }
-    }
-  }
-}
-
-// ─── Game Loop Setup ───
-
-function setupGameLoop(
-  engine: Engine,
-  cameraController: CameraController,
-  input: InputManager,
-  playerMesh: THREE.Mesh,
-): void {
-  const playerVelocity = new THREE.Vector3();
-  const moveSpeed = 8;
-  const gravity = -25;
-  const jumpForce = 10;
-  let verticalVelocity = 0;
-  let isGrounded = true;
-  const groundY = 1;
-  const cameraOrbitSpeed = 120;
-
-  engine.onUpdate((dt) => {
-    // Arrow key camera orbit
-    if (input.isKeyDown('ArrowLeft')) cameraController.rotateAzimuth(cameraOrbitSpeed * dt);
-    if (input.isKeyDown('ArrowRight')) cameraController.rotateAzimuth(-cameraOrbitSpeed * dt);
-    if (input.isKeyDown('ArrowUp')) cameraController.rotateElevation(cameraOrbitSpeed * dt);
-    if (input.isKeyDown('ArrowDown')) cameraController.rotateElevation(-cameraOrbitSpeed * dt);
-
-    // Player movement
-    const forward = new THREE.Vector3(0, 0, -1);
-    const right = new THREE.Vector3(1, 0, 0);
-    const azimuthRad = (cameraController.getAzimuth() * Math.PI) / 180;
-    forward.applyAxisAngle(new THREE.Vector3(0, 1, 0), azimuthRad);
-    right.applyAxisAngle(new THREE.Vector3(0, 1, 0), azimuthRad);
-
-    playerVelocity.set(0, 0, 0);
-    if (input.isKeyDown('KeyW')) playerVelocity.add(forward);
-    if (input.isKeyDown('KeyS')) playerVelocity.sub(forward);
-    if (input.isKeyDown('KeyD')) playerVelocity.add(right);
-    if (input.isKeyDown('KeyA')) playerVelocity.sub(right);
-
-    if (playerVelocity.length() > 0) {
-      playerVelocity.normalize().multiplyScalar(moveSpeed * dt);
-      playerMesh.position.add(playerVelocity);
-      const angle = Math.atan2(playerVelocity.x, playerVelocity.z);
-      playerMesh.rotation.y = angle;
-    }
-
-    // Jump & gravity
-    if (input.isKeyDown('Space') && isGrounded) {
-      verticalVelocity = jumpForce;
-      isGrounded = false;
-    }
-
-    verticalVelocity += gravity * dt;
-    playerMesh.position.y += verticalVelocity * dt;
-
-    if (playerMesh.position.y <= groundY) {
-      playerMesh.position.y = groundY;
-      verticalVelocity = 0;
-      isGrounded = true;
-    }
-
-    // Camera follow
-    cameraController.setTarget(
-      playerMesh.position.x,
-      playerMesh.position.y,
-      playerMesh.position.z,
-    );
-    cameraController.update(dt);
-
-    input.resetFrameState();
-  });
-
-  engine.onRender((_interpolation) => {
-    // Render interpolation can be used for smooth visuals between fixed updates
-  });
-}
-
 // ─── Component ───
 
 export const GameCanvas: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<Engine | null>(null);
-  const cameraRef = useRef<CameraController | null>(null);
   const screen = useGameStore((s) => s.screen);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    // Initialize Engine
+    // ── Initialize Engine ──
     const engine = new Engine(canvas);
     engineRef.current = engine;
 
     const scene = engine.getScene();
     const camera = engine.getCamera();
 
-    // Camera Controller
+    // ── Camera Controller ──
     const cameraController = new CameraController(camera);
     cameraController.attach(canvas);
-    cameraController.setTarget(0, 0, 0);
-    cameraRef.current = cameraController;
 
-    // Input Manager
+    // ── Input Manager ──
     const input = InputManager.getInstance();
 
-    // Build scene
+    // ── Lighting ──
     createLighting(scene);
-    createGround(scene);
-    const playerMesh = createPlayerMesh(scene);
-    createEnvironment(scene);
 
-    // Game loop
-    setupGameLoop(engine, cameraController, input, playerMesh);
+    // ── Chunk Manager (voxel terrain) ──
+    const chunkManager = new ChunkManager(scene, 4);
+
+    // Set up local chunk generation for offline/testing mode
+    chunkManager.setChunkRequestCallback((cx, cz) => {
+      // In offline mode, generate chunks locally
+      const data = generateLocalChunk(cx, cz);
+      chunkManager.onChunkDataReceived(cx, cz, data);
+    });
+
+    // ── Particle System ──
+    const particleSystem = new ParticleSystem(scene);
+
+    // ── Animation System ──
+    const animationSystem = new AnimationSystem();
+
+    // ── Player Sprite & Renderer ──
+    const { canvas: spriteCanvas, config: spriteConfig } = generateSpriteSheet('#ffffff');
+    const playerRenderer = new PlayerRenderer(spriteCanvas, spriteConfig);
+    playerRenderer.addToScene(scene);
+    animationSystem.register('local', playerRenderer);
+
+    // ── Player Controller ──
+    const playerController = new LocalPlayerController(
+      input,
+      cameraController,
+      playerRenderer,
+      chunkManager,
+      camera,
+    );
+
+    // Spawn player above sea level
+    const spawnY = SEA_LEVEL + 10;
+    playerController.setPosition(16, spawnY, 16);
+
+    // ── Generate initial terrain ──
+    chunkManager.generateLocalTestChunks(16, 16, 4);
+
+    // ── Pointer Lock on Click ──
+    const handleClick = () => {
+      if (!input.isPointerLocked()) {
+        input.requestPointerLock(canvas);
+      } else {
+        // Left-click action: emit particles at crosshair target
+        particleSystem.emit({
+          position: playerController.getPosition().add(new THREE.Vector3(0, 1, 0)),
+          count: 5,
+          color: new THREE.Color(0xf0a500),
+          speed: 2.0,
+          spread: 0.5,
+          lifetime: 0.6,
+          size: 0.12,
+        });
+      }
+    };
+    canvas.addEventListener('click', handleClick);
+
+    // ── Game Loop ──
+    engine.onUpdate((dt) => {
+      // Player update
+      playerController.update(dt);
+
+      // Update chunks around player
+      const pos = playerController.getPosition();
+      chunkManager.update(pos.x, pos.z);
+
+      // Animation system
+      animationSystem.update(dt);
+
+      // Particles
+      particleSystem.update(dt);
+
+      // Camera
+      cameraController.update(dt);
+
+      // Reset input frame state
+      input.resetFrameState();
+    });
+
+    engine.onRender((_interpolation) => {
+      // Render interpolation can be used for smooth visuals between fixed updates
+    });
+
+    // ── Start ──
     engine.start();
 
-    // Cleanup
+    // ── Cleanup ──
     return () => {
+      canvas.removeEventListener('click', handleClick);
       cameraController.detach();
+      playerRenderer.removeFromScene(scene);
+      animationSystem.dispose();
+      particleSystem.dispose();
+      chunkManager.dispose();
       engine.dispose();
       input.dispose();
     };
@@ -248,7 +172,14 @@ export const GameCanvas: React.FC = () => {
 
       {/* HUD Overlay */}
       <div style={styles.hud}>
-        <p style={styles.hudText}>WASD to move · Space to jump · Arrow keys or right-click to orbit · Scroll to zoom</p>
+        <p style={styles.hudText}>
+          Click to lock mouse · WASD to move · Space to jump · Shift to sprint · Right-click drag to orbit
+        </p>
+      </div>
+
+      {/* Crosshair */}
+      <div style={styles.crosshair}>
+        <div style={styles.crosshairDot} />
       </div>
 
       {/* Death overlay */}
@@ -261,6 +192,50 @@ export const GameCanvas: React.FC = () => {
     </div>
   );
 };
+
+// ─── Local Chunk Generation Helper ───
+
+function generateLocalChunk(cx: number, cz: number): Uint8Array {
+  const SX = 32;
+  const SY = 64;
+  const SZ = 32;
+  const data = new Uint8Array(SX * SY * SZ);
+  const seaLevel = 32;
+
+  for (let x = 0; x < SX; x++) {
+    for (let z = 0; z < SZ; z++) {
+      const worldX = cx * SX + x;
+      const worldZ = cz * SZ + z;
+
+      const height = Math.floor(
+        seaLevel +
+        Math.sin(worldX * 0.05) * 4 +
+        Math.cos(worldZ * 0.07) * 3 +
+        Math.sin((worldX + worldZ) * 0.03) * 2,
+      );
+
+      for (let y = 0; y < SY; y++) {
+        const idx = x + z * SX + y * SX * SZ;
+        if (y === 0) {
+          data[idx] = 13; // Bedrock
+        } else if (y < height - 4) {
+          data[idx] = 3; // Stone
+        } else if (y < height) {
+          data[idx] = 1; // Dirt
+        } else if (y === height) {
+          data[idx] = 2; // Grass
+        } else if (y <= seaLevel) {
+          data[idx] = 14; // Water
+        }
+        // else Air (0, default)
+      }
+    }
+  }
+
+  return data;
+}
+
+// ─── Styles ───
 
 const styles: Record<string, React.CSSProperties> = {
   hud: {
@@ -277,6 +252,20 @@ const styles: Record<string, React.CSSProperties> = {
     letterSpacing: '1px',
     textShadow: '0 1px 3px rgba(0,0,0,0.5)',
     margin: 0,
+  },
+  crosshair: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: 'translate(-50%, -50%)',
+    pointerEvents: 'none',
+  },
+  crosshairDot: {
+    width: '4px',
+    height: '4px',
+    borderRadius: '50%',
+    background: 'rgba(255,255,255,0.7)',
+    boxShadow: '0 0 4px rgba(0,0,0,0.5)',
   },
   deathOverlay: {
     position: 'absolute',

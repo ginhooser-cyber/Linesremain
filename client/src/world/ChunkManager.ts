@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import {
   CHUNK_SIZE_X,
+  CHUNK_SIZE_Y,
   CHUNK_SIZE_Z,
   VIEW_DISTANCE_CHUNKS,
 } from '@shared/constants/game';
@@ -267,6 +268,71 @@ export class ChunkManager {
 
   getLoadedChunkCount(): number {
     return this.loadedChunks.size;
+  }
+
+  // ─── Local Test Terrain Generation ───
+
+  /**
+   * Generate simple test chunks locally without needing a server.
+   * Creates basic terrain with grass, dirt, stone layers.
+   */
+  generateLocalTestChunks(centerX: number, centerZ: number, radius = 3): void {
+    const playerCX = Math.floor(centerX / CHUNK_SIZE_X);
+    const playerCZ = Math.floor(centerZ / CHUNK_SIZE_Z);
+
+    for (let dx = -radius; dx <= radius; dx++) {
+      for (let dz = -radius; dz <= radius; dz++) {
+        if (dx * dx + dz * dz > radius * radius) continue;
+
+        const cx = playerCX + dx;
+        const cz = playerCZ + dz;
+        const key = chunkKey(cx, cz);
+
+        if (this.loadedChunks.has(key)) continue;
+
+        const data = this.generateTestChunkData(cx, cz);
+        this.onChunkDataReceived(cx, cz, data);
+      }
+    }
+  }
+
+  private generateTestChunkData(cx: number, cz: number): Uint8Array {
+    const data = new Uint8Array(CHUNK_SIZE_X * CHUNK_SIZE_Y * CHUNK_SIZE_Z);
+    const seaLevel = 32;
+
+    for (let x = 0; x < CHUNK_SIZE_X; x++) {
+      for (let z = 0; z < CHUNK_SIZE_Z; z++) {
+        const worldX = cx * CHUNK_SIZE_X + x;
+        const worldZ = cz * CHUNK_SIZE_Z + z;
+
+        // Simple height generation using sine waves
+        const height = Math.floor(
+          seaLevel +
+          Math.sin(worldX * 0.05) * 4 +
+          Math.cos(worldZ * 0.07) * 3 +
+          Math.sin((worldX + worldZ) * 0.03) * 2
+        );
+
+        for (let y = 0; y < CHUNK_SIZE_Y; y++) {
+          const idx = blockIndex(x, y, z);
+          if (y === 0) {
+            data[idx] = 13; // Bedrock
+          } else if (y < height - 4) {
+            data[idx] = 3; // Stone
+          } else if (y < height) {
+            data[idx] = 1; // Dirt
+          } else if (y === height) {
+            data[idx] = 2; // Grass
+          } else if (y <= seaLevel) {
+            data[idx] = 14; // Water
+          } else {
+            data[idx] = 0; // Air
+          }
+        }
+      }
+    }
+
+    return data;
   }
 
   // ─── Cleanup ───
