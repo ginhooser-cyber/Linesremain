@@ -1,14 +1,16 @@
 // ─── Inventory Panel ───
 
-import React from 'react';
+import React, { useCallback } from 'react';
 import { useUIStore } from '../../stores/useUIStore';
 import { usePlayerStore } from '../../stores/usePlayerStore';
 import { ITEM_REGISTRY } from '@shared/constants/items';
 import { HOTBAR_SLOTS, PLAYER_INVENTORY_SLOTS } from '@shared/constants/game';
 import { EquipSlot } from '@shared/types/items';
+import { ClientMessage } from '@shared/types/network';
 import { getItemIcon } from '../../utils/itemIcons';
 import { Tooltip, useTooltip } from '../common/Tooltip';
 import { DragDropProvider, useDragDrop } from '../common/DragDrop';
+import { socketClient } from '../../network/SocketClient';
 import '../../styles/panels.css';
 
 const EQUIP_SLOTS: { slot: EquipSlot; label: string }[] = [
@@ -22,6 +24,20 @@ export const InventoryPanel: React.FC = () => {
   const inventoryOpen = useUIStore((s) => s.inventoryOpen);
   const toggleInventory = useUIStore((s) => s.toggleInventory);
 
+  const handleDrop = useCallback((fromSlot: number, toSlot: number) => {
+    if (fromSlot === toSlot) return;
+
+    // Swap items locally in the store
+    const inv = [...usePlayerStore.getState().inventory];
+    const temp = inv[fromSlot];
+    inv[fromSlot] = inv[toSlot];
+    inv[toSlot] = temp;
+    usePlayerStore.getState().setInventory(inv);
+
+    // Notify server
+    socketClient.emit(ClientMessage.InventoryMove, { fromSlot, toSlot });
+  }, []);
+
   if (!inventoryOpen) return null;
 
   return (
@@ -31,7 +47,7 @@ export const InventoryPanel: React.FC = () => {
           <span className="panel__title">Inventory</span>
           <button className="panel__close" onClick={toggleInventory}>✕</button>
         </div>
-        <DragDropProvider>
+        <DragDropProvider onDrop={handleDrop}>
           <InventoryContent />
         </DragDropProvider>
       </div>
@@ -45,7 +61,7 @@ const InventoryContent: React.FC = () => {
   const inventory = usePlayerStore((s) => s.inventory);
   const equipment = usePlayerStore((s) => s.equipment);
   const { tooltipState, showTooltip, hideTooltip, moveTooltip } = useTooltip();
-  const { startDrag, endDrag, updatePosition } = useDragDrop();
+  const { dragState, startDrag, endDrag, updatePosition } = useDragDrop();
 
   // Hotbar = first HOTBAR_SLOTS, main inventory = remaining
   const hotbarItems = inventory.slice(0, HOTBAR_SLOTS);
@@ -55,7 +71,7 @@ const InventoryContent: React.FC = () => {
     <div
       style={{ display: 'flex', gap: 20 }}
       onMouseMove={updatePosition}
-      onMouseUp={endDrag}
+      onMouseUp={() => endDrag()}
     >
       {/* Equipment Slots */}
       <div className="equip-slots">
@@ -99,9 +115,13 @@ const InventoryContent: React.FC = () => {
             return (
               <div
                 key={slotIndex}
-                className="inv-slot"
+                className={`inv-slot${dragState.isDragging ? ' inv-slot--drag-target' : ''}`}
                 onMouseDown={(e) => {
                   if (item) startDrag(item, slotIndex, 'inventory', e);
+                }}
+                onMouseUp={(e) => {
+                  e.stopPropagation();
+                  endDrag(slotIndex, 'inventory');
                 }}
                 onMouseEnter={(e) => {
                   if (item) showTooltip(item, e.clientX, e.clientY);
@@ -151,9 +171,13 @@ const InventoryContent: React.FC = () => {
               return (
                 <div
                   key={i}
-                  className="inv-slot"
+                  className={`inv-slot${dragState.isDragging ? ' inv-slot--drag-target' : ''}`}
                   onMouseDown={(e) => {
                     if (item) startDrag(item, i, 'hotbar', e);
+                  }}
+                  onMouseUp={(e) => {
+                    e.stopPropagation();
+                    endDrag(i, 'hotbar');
                   }}
                   onMouseEnter={(e) => {
                     if (item) showTooltip(item, e.clientX, e.clientY);

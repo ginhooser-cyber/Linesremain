@@ -29,6 +29,14 @@ interface RaycastHit {
   adjacentPos: { x: number; y: number; z: number };
 }
 
+// ─── Item-to-Block Mapping ───
+// Maps item IDs to the block type they place when right-clicking
+const ITEM_TO_BLOCK: Partial<Record<number, BlockType>> = {
+  1: BlockType.Planks,        // Wood → Planks
+  2: BlockType.Cobblestone,   // Stone → Cobblestone
+  4: BlockType.Sand,          // Sand resource (Sulfur Ore) → Sand block
+};
+
 // ─── Constants ───
 
 const MAX_REACH = 6; // blocks
@@ -74,6 +82,10 @@ export class BlockInteraction {
   private highlightMesh: THREE.LineSegments;
   private highlightVisible = false;
 
+  // Break overlay (darkens block as progress increases)
+  private breakOverlayMesh: THREE.Mesh;
+  private breakOverlayMat: THREE.MeshBasicMaterial;
+
   // Current target
   private targetBlock: { x: number; y: number; z: number } | null = null;
   private adjacentBlock: { x: number; y: number; z: number } | null = null;
@@ -113,6 +125,20 @@ export class BlockInteraction {
     this.highlightMesh = new THREE.LineSegments(edgesGeo, lineMat);
     this.highlightMesh.visible = false;
     this.scene.add(this.highlightMesh);
+
+    // Create break overlay — a slightly inset dark box that darkens as break progress increases
+    const overlayGeo = new THREE.BoxGeometry(1.002, 1.002, 1.002);
+    this.breakOverlayMat = new THREE.MeshBasicMaterial({
+      color: 0x000000,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      side: THREE.FrontSide,
+    });
+    this.breakOverlayMesh = new THREE.Mesh(overlayGeo, this.breakOverlayMat);
+    this.breakOverlayMesh.visible = false;
+    this.breakOverlayMesh.renderOrder = 1;
+    this.scene.add(this.breakOverlayMesh);
   }
 
   // ─── Update ───
@@ -161,6 +187,20 @@ export class BlockInteraction {
 
     // ── Block Placing (right mouse click) ──
     this.updatePlacing();
+
+    // ── Update break overlay visibility ──
+    if (this.breakingBlock && this.breakProgress > 0) {
+      this.breakOverlayMesh.position.set(
+        this.breakingBlock.x + 0.5,
+        this.breakingBlock.y + 0.5,
+        this.breakingBlock.z + 0.5,
+      );
+      this.breakOverlayMat.opacity = this.breakProgress * 0.6;
+      this.breakOverlayMesh.visible = true;
+    } else {
+      this.breakOverlayMesh.visible = false;
+      this.breakOverlayMat.opacity = 0;
+    }
   }
 
   // ─── Breaking Logic ───
@@ -283,14 +323,31 @@ export class BlockInteraction {
     const existing = this.getBlockType(x, y, z);
     if (existing !== null && existing !== BlockType.Air) return;
 
-    // Place cobblestone as test block
-    const placeType = BlockType.Cobblestone;
+    // Determine block type from active hotbar item
+    const store = usePlayerStore.getState();
+    const heldItem = store.inventory[store.hotbarIndex];
+    if (!heldItem) return; // Nothing in hotbar slot
+
+    const placeType = ITEM_TO_BLOCK[heldItem.itemId];
+    if (placeType === undefined) return; // Item is not placeable
 
     // Place locally
     this.chunkManager.onBlockChanged(x, y, z, placeType);
 
     // Notify server
     socketClient.emit(ClientMessage.BlockPlace, { x, y, z, blockType: placeType });
+
+    // Consume one item from hotbar slot
+    const updatedInventory = [...store.inventory];
+    const slot = updatedInventory[store.hotbarIndex];
+    if (slot) {
+      if (slot.quantity <= 1) {
+        updatedInventory[store.hotbarIndex] = null;
+      } else {
+        updatedInventory[store.hotbarIndex] = { ...slot, quantity: slot.quantity - 1 };
+      }
+      store.setInventory(updatedInventory);
+    }
 
     // Play place sound
     AudioManager.getInstance().play('blockPlace');
@@ -448,6 +505,10 @@ export class BlockInteraction {
     this.scene.remove(this.highlightMesh);
     this.highlightMesh.geometry.dispose();
     (this.highlightMesh.material as THREE.LineBasicMaterial).dispose();
+
+    this.scene.remove(this.breakOverlayMesh);
+    this.breakOverlayMesh.geometry.dispose();
+    this.breakOverlayMat.dispose();
 
     this.targetBlock = null;
     this.adjacentBlock = null;

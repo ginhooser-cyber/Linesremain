@@ -17,7 +17,7 @@ interface DragState {
 interface DragContextValue {
   dragState: DragState;
   startDrag: (item: ItemStack, slotIndex: number, sourceType: DragState['sourceType'], e: React.MouseEvent) => void;
-  endDrag: () => void;
+  endDrag: (targetSlot?: number, targetType?: DragState['sourceType']) => void;
   updatePosition: (e: React.MouseEvent) => void;
 }
 
@@ -63,8 +63,13 @@ export const DragDropProvider: React.FC<DragDropProviderProps> = ({ children, on
     [],
   );
 
-  const endDrag = useCallback(() => {
-    setDragState(defaultDragState);
+  const endDrag = useCallback((targetSlot?: number, targetType?: DragState['sourceType']) => {
+    setDragState((prev) => {
+      if (prev.isDragging && targetSlot !== undefined && targetType !== undefined && onDropRef.current) {
+        onDropRef.current(prev.sourceSlot, targetSlot, prev.sourceType, targetType);
+      }
+      return defaultDragState;
+    });
   }, []);
 
   const updatePosition = useCallback((e: React.MouseEvent) => {

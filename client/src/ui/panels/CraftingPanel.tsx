@@ -1,12 +1,14 @@
 // ─── Crafting Panel ───
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { useUIStore } from '../../stores/useUIStore';
 import { usePlayerStore } from '../../stores/usePlayerStore';
 import { ITEM_REGISTRY } from '@shared/constants/items';
 import { RECIPE_REGISTRY } from '@shared/constants/recipes';
 import { CraftingTier } from '@shared/types/recipes';
 import type { RecipeDefinition } from '@shared/types/recipes';
+import { ServerMessage } from '@shared/types/network';
+import type { CraftProgressPayload } from '@shared/types/network';
 import { getItemIcon } from '../../utils/itemIcons';
 import { socketClient } from '../../network/SocketClient';
 import '../../styles/panels.css';
@@ -43,6 +45,21 @@ const CraftingContent: React.FC = () => {
   const inventory = usePlayerStore((s) => s.inventory);
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [craftProgress, setCraftProgress] = useState<{ recipeId: number; progress: number } | null>(null);
+
+  // Listen for craft progress updates from server
+  useEffect(() => {
+    const handler = (data: unknown) => {
+      const payload = data as CraftProgressPayload;
+      if (payload.isComplete) {
+        setCraftProgress(null);
+      } else {
+        setCraftProgress({ recipeId: payload.recipeId, progress: payload.progress });
+      }
+    };
+    socketClient.on(ServerMessage.CraftProgress, handler);
+    return () => socketClient.off(ServerMessage.CraftProgress, handler);
+  }, []);
 
   // Build recipes array from registry
   const allRecipes = useMemo(() => {
@@ -135,6 +152,20 @@ const CraftingContent: React.FC = () => {
             );
           },
         )}
+
+        {/* Active craft queue indicator */}
+        {craftProgress && (
+          <div className="craft-queue" style={{ marginTop: 8 }}>
+            <div className="craft-queue__item" onClick={() => setSelectedId(craftProgress.recipeId)}>
+              {(() => {
+                const recipe = RECIPE_REGISTRY[craftProgress.recipeId] as RecipeDefinition | undefined;
+                const outputDef = recipe ? ITEM_REGISTRY[recipe.outputItemId] : undefined;
+                return outputDef ? getItemIcon(outputDef.category) : '?';
+              })()}
+              <div className="craft-queue__progress" style={{ width: `${craftProgress.progress * 100}%` }} />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Recipe Detail */}
@@ -195,9 +226,26 @@ const CraftingContent: React.FC = () => {
               </div>
             </div>
 
-            <button className="craft-btn" disabled={!canCraft} onClick={handleCraft}>
-              Craft
+            <button className="craft-btn" disabled={!canCraft || craftProgress !== null} onClick={handleCraft}>
+              {craftProgress && craftProgress.recipeId === selectedRecipe.id
+                ? `Crafting... ${Math.round(craftProgress.progress * 100)}%`
+                : 'Craft'}
             </button>
+
+            {/* Craft progress bar */}
+            {craftProgress && craftProgress.recipeId === selectedRecipe.id && (
+              <div style={{ marginTop: 8 }}>
+                <div className="progress-bar">
+                  <div
+                    className="progress-bar__fill"
+                    style={{
+                      width: `${craftProgress.progress * 100}%`,
+                      background: 'var(--accent)',
+                    }}
+                  />
+                </div>
+              </div>
+            )}
           </>
         ) : (
           <div

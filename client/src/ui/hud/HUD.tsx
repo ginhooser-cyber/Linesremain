@@ -8,6 +8,7 @@ import { Crosshair } from './Crosshair';
 import { ChatBox } from './ChatBox';
 import { StatusEffects } from './StatusEffects';
 import { DamageIndicator } from './DamageIndicator';
+import { PickupNotifications } from './PickupNotifications';
 import '../../styles/hud.css';
 
 export const HUD: React.FC = () => {
@@ -20,6 +21,7 @@ export const HUD: React.FC = () => {
       <ChatBox />
       <StatusEffects />
       <DamageIndicator />
+      <PickupNotifications />
     </div>
   );
 };
