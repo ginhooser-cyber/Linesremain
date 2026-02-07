@@ -223,7 +223,7 @@ export class ChunkManager {
 
     const mesh = new THREE.Mesh(geometry, material);
     mesh.frustumCulled = true;
-    mesh.castShadow = true;
+    mesh.castShadow = false;
     mesh.receiveShadow = true;
 
     return mesh;
@@ -274,6 +274,10 @@ export class ChunkManager {
 
   getLoadedChunkCount(): number {
     return this.loadedChunks.size;
+  }
+
+  getLoadedChunkKeys(): Set<string> {
+    return new Set(this.loadedChunks.keys());
   }
 
   // ─── Local Test Terrain Generation ───

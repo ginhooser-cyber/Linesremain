@@ -1,6 +1,6 @@
 // ─── Game Canvas ───
 // Wires up the full game session: Engine, ChunkManager, Player Controller,
-// Particle System, Animation System, and Camera.
+// Particle System, Animation System, Camera, Sky, Water, and FPS Counter.
 
 import React, { useEffect, useRef, useCallback } from 'react';
 import * as THREE from 'three';
@@ -10,6 +10,9 @@ import { InputManager } from '../../engine/InputManager';
 import { ParticleSystem } from '../../engine/ParticleSystem';
 import { AudioManager } from '../../engine/AudioManager';
 import { ChunkManager } from '../../world/ChunkManager';
+import { SkyRenderer } from '../../world/SkyRenderer';
+import { WaterRenderer } from '../../world/WaterRenderer';
+import { ClientTerrainGenerator } from '../../world/ClientTerrainGenerator';
 import { PlayerRenderer } from '../../entities/PlayerRenderer';
 import { LocalPlayerController } from '../../entities/LocalPlayerController';
 import { AnimationSystem } from '../../systems/AnimationSystem';
@@ -19,39 +22,17 @@ import { generateSpriteSheet } from '../../assets/SpriteGenerator';
 import { useUIStore } from '../../stores/useUIStore';
 import { useChatStore } from '../../stores/useChatStore';
 import { socketClient } from '../../network/SocketClient';
-import { SEA_LEVEL, CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z } from '@shared/constants/game';
+import { SEA_LEVEL, CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z, DAY_LENGTH_SECONDS } from '@shared/constants/game';
 import { BuildingPieceType, BuildingTier } from '@shared/types/buildings';
 import { ClientMessage } from '@shared/types/network';
 import { setOnBlockChanged } from '../../network/MessageHandler';
 import { HUD } from '../hud/HUD';
+import { FPSCounter } from '../hud/FPSCounter';
 import { InventoryPanel } from '../panels/InventoryPanel';
 import { CraftingPanel } from '../panels/CraftingPanel';
 import { BuildingPanel } from '../panels/BuildingPanel';
 import { MapPanel } from '../panels/MapPanel';
 import { SettingsPanel } from '../panels/SettingsPanel';
-
-// ─── Scene Setup Helpers ───
-
-function createLighting(scene: THREE.Scene): void {
-  const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
-  scene.add(ambientLight);
-
-  const sunLight = new THREE.DirectionalLight(0xfff4e0, 1.2);
-  sunLight.position.set(50, 80, 30);
-  sunLight.castShadow = true;
-  sunLight.shadow.mapSize.width = 2048;
-  sunLight.shadow.mapSize.height = 2048;
-  sunLight.shadow.camera.near = 0.5;
-  sunLight.shadow.camera.far = 200;
-  sunLight.shadow.camera.left = -60;
-  sunLight.shadow.camera.right = 60;
-  sunLight.shadow.camera.top = 60;
-  sunLight.shadow.camera.bottom = -60;
-  scene.add(sunLight);
-
-  const hemisphereLight = new THREE.HemisphereLight(0x87ceeb, 0x556b2f, 0.3);
-  scene.add(hemisphereLight);
-}
 
 // ─── Component ───
 
@@ -78,6 +59,9 @@ export const GameCanvas: React.FC = () => {
     buildingPreviewRef.current?.deactivate();
   }, []);
 
+  // Stable callback for FPS counter
+  const getRenderer = useCallback(() => engineRef.current?.getRenderer() ?? null, []);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -96,21 +80,27 @@ export const GameCanvas: React.FC = () => {
     // ── Input Manager ──
     const input = InputManager.getInstance();
 
-    // ── Lighting ──
-    createLighting(scene);
+    // ── Sky Renderer (replaces manual lighting — handles sky dome, sun/moon, ambient, fog) ──
+    const skyRenderer = new SkyRenderer(scene);
+    skyRenderer.update(0.35); // Start at morning
+
+    // ── Terrain Generator (full biome variety) ──
+    const terrainGenerator = new ClientTerrainGenerator(42);
 
     // ── Chunk Manager (voxel terrain) ──
     const chunkManager = new ChunkManager(scene, 4);
 
-    // Set up local chunk generation for offline/testing mode
+    // Set up local chunk generation with the full terrain generator
     chunkManager.setChunkRequestCallback((cx, cz) => {
-      // In offline mode, generate chunks locally
-      const data = generateLocalChunk(cx, cz);
+      const data = terrainGenerator.generateChunk(cx, cz);
       chunkManager.onChunkDataReceived(cx, cz, data);
     });
 
     // Wire server block updates to the chunk manager
     setOnBlockChanged((wx, wy, wz, bt) => chunkManager.onBlockChanged(wx, wy, wz, bt));
+
+    // ── Water Renderer (animated shader water planes) ──
+    const waterRenderer = new WaterRenderer(scene);
 
     // ── Particle System ──
     const particleSystem = new ParticleSystem(scene);
@@ -142,29 +132,35 @@ export const GameCanvas: React.FC = () => {
     );
     playerControllerRef.current = playerController;
 
-    // ── Generate initial terrain ──
-    chunkManager.generateLocalTestChunks(16, 16, 4);
-
-    // Spawn player ON TOP of the terrain surface
+    // ── Generate spawn chunk so we can find surface height ──
     const spawnX = 16;
     const spawnZ = 16;
     const spawnCX = Math.floor(spawnX / CHUNK_SIZE_X);
     const spawnCZ = Math.floor(spawnZ / CHUNK_SIZE_Z);
+    const spawnChunkData = terrainGenerator.generateChunk(spawnCX, spawnCZ);
+    chunkManager.onChunkDataReceived(spawnCX, spawnCZ, spawnChunkData);
     const localX = ((spawnX % CHUNK_SIZE_X) + CHUNK_SIZE_X) % CHUNK_SIZE_X;
     const localZ = ((spawnZ % CHUNK_SIZE_Z) + CHUNK_SIZE_Z) % CHUNK_SIZE_Z;
-    const spawnChunkData = chunkManager.getChunkData(spawnCX, spawnCZ);
 
     let spawnY = SEA_LEVEL + 10; // fallback
     if (spawnChunkData) {
       for (let y = CHUNK_SIZE_Y - 1; y >= 0; y--) {
         const idx = localX + localZ * CHUNK_SIZE_X + y * CHUNK_SIZE_X * CHUNK_SIZE_Z;
-        if (spawnChunkData[idx] !== 0) {
+        const block = spawnChunkData[idx]!;
+        // Skip air and water — find actual solid ground
+        if (block !== 0 && block !== 14) {
           spawnY = y + 1;
           break;
         }
       }
     }
     playerController.setPosition(spawnX, spawnY + 0.1, spawnZ);
+
+    // Sync water planes with initially loaded chunks
+    waterRenderer.syncWithChunks(chunkManager.getLoadedChunkKeys());
+
+    // ── Day/night cycle state ──
+    let worldTime = 0.35; // Start at morning
 
     // ── Pointer Lock tracking ──
     const handleLockChange = () => {
@@ -243,6 +239,15 @@ export const GameCanvas: React.FC = () => {
       const pos = playerController.getPosition();
       chunkManager.update(pos.x, pos.z);
 
+      // Sync water planes with loaded chunks
+      waterRenderer.syncWithChunks(chunkManager.getLoadedChunkKeys());
+      waterRenderer.update(dt);
+
+      // Day/night cycle (accelerated: 1 game day = DAY_LENGTH_SECONDS real seconds)
+      worldTime = (worldTime + dt / DAY_LENGTH_SECONDS) % 1;
+      skyRenderer.update(worldTime);
+      skyRenderer.followCamera(camera);
+
       // Animation system
       animationSystem.update(dt);
 
@@ -282,6 +287,8 @@ export const GameCanvas: React.FC = () => {
       blockInteraction.dispose();
       animationSystem.dispose();
       particleSystem.dispose();
+      waterRenderer.dispose();
+      skyRenderer.dispose();
       chunkManager.dispose();
       audio.dispose();
       engine.dispose();
@@ -292,6 +299,9 @@ export const GameCanvas: React.FC = () => {
   return (
     <div style={{ position: 'fixed', inset: 0 }}>
       <canvas ref={canvasRef} style={{ display: 'block', width: '100%', height: '100%' }} />
+
+      {/* Debug overlay */}
+      <FPSCounter getRenderer={getRenderer} />
 
       {/* Full game HUD */}
       <HUD />
@@ -306,45 +316,3 @@ export const GameCanvas: React.FC = () => {
     </div>
   );
 };
-
-// ─── Local Chunk Generation Helper ───
-
-function generateLocalChunk(cx: number, cz: number): Uint8Array {
-  const SX = 32;
-  const SY = 64;
-  const SZ = 32;
-  const data = new Uint8Array(SX * SY * SZ);
-  const seaLevel = 32;
-
-  for (let x = 0; x < SX; x++) {
-    for (let z = 0; z < SZ; z++) {
-      const worldX = cx * SX + x;
-      const worldZ = cz * SZ + z;
-
-      const height = Math.floor(
-        seaLevel +
-        Math.sin(worldX * 0.05) * 4 +
-        Math.cos(worldZ * 0.07) * 3 +
-        Math.sin((worldX + worldZ) * 0.03) * 2,
-      );
-
-      for (let y = 0; y < SY; y++) {
-        const idx = x + z * SX + y * SX * SZ;
-        if (y === 0) {
-          data[idx] = 13; // Bedrock
-        } else if (y < height - 4) {
-          data[idx] = 3; // Stone
-        } else if (y < height) {
-          data[idx] = 1; // Dirt
-        } else if (y === height) {
-          data[idx] = 2; // Grass
-        } else if (y <= seaLevel) {
-          data[idx] = 14; // Water
-        }
-        // else Air (0, default)
-      }
-    }
-  }
-
-  return data;
-}
