@@ -4,6 +4,7 @@
 
 import { io, type Socket } from 'socket.io-client';
 import { useGameStore } from '../stores/useGameStore';
+import { debugLog } from '../utils/debugLog';
 
 // ─── Types ───
 
@@ -55,25 +56,25 @@ class SocketClient {
     if (!this.socket) return;
 
     this.socket.on('connect', () => {
-      console.log('[SocketClient] Connected to server');
+      debugLog.log('[SocketClient] Connected to server');
       useGameStore.getState().setConnected(true);
     });
 
     this.socket.on('disconnect', (reason) => {
-      console.log('[SocketClient] Disconnected:', reason);
+      debugLog.log('[SocketClient] Disconnected:', reason);
       useGameStore.getState().setConnected(false);
     });
 
     this.socket.on('connect_error', (err) => {
-      console.error('[SocketClient] Connection error:', err.message);
+      debugLog.error('[SocketClient] Connection error:', err.message);
     });
 
     this.socket.on('reconnect_attempt', (attempt) => {
-      console.log(`[SocketClient] Reconnection attempt ${attempt}`);
+      debugLog.log(`[SocketClient] Reconnection attempt ${attempt}`);
     });
 
     this.socket.on('reconnect_failed', () => {
-      console.error('[SocketClient] Reconnection failed after all attempts');
+      debugLog.error('[SocketClient] Reconnection failed after all attempts');
       useGameStore.getState().setScreen('menu');
     });
 

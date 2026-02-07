@@ -10,6 +10,7 @@ let isShuttingDown = false;
 interface ShutdownDeps {
   httpServer: HttpServer;
   io: SocketIOServer;
+  onSaveWorld?: () => Promise<void>;
 }
 
 let deps: ShutdownDeps | null = null;
@@ -36,12 +37,19 @@ async function shutdown(signal: string): Promise<void> {
       logger.info('HTTP server closed');
     }
 
+    // Save world state before closing database
+    if (deps?.onSaveWorld) {
+      try {
+        await deps.onSaveWorld();
+        logger.info('World state saved');
+      } catch (err) {
+        logger.error(err, 'Failed to save world state during shutdown');
+      }
+    }
+
     // Close database connections
     await closeDatabase();
     logger.info('Database connections closed');
-
-    // TODO: Save world state
-    // TODO: Close Redis connection
 
     logger.info('Shutdown complete');
     process.exit(0);

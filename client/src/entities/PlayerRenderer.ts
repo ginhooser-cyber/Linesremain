@@ -40,6 +40,17 @@ export class PlayerRenderer {
   private frameV: number;
   private maxFramesPerRow: number;
 
+  // Death animation state
+  private isDead = false;
+  private deathTimer = 0;
+  private readonly deathDuration = 2.0; // seconds to fade out
+  private deathRotation = 0;
+
+  // Hit flash state
+  private hitFlashTimer = 0;
+  private readonly hitFlashDuration = 0.1; // seconds
+  private originalColor = new THREE.Color(0xffffff);
+
   constructor(spriteSheetCanvas: HTMLCanvasElement, config: SpriteSheetConfig) {
     this.config = config;
 
@@ -103,9 +114,68 @@ export class PlayerRenderer {
     return this.state.finished;
   }
 
+  // ─── Death Animation ───
+
+  /** Trigger death animation — stickman falls over and fades out */
+  playDeath(): void {
+    if (this.isDead) return;
+    this.isDead = true;
+    this.deathTimer = 0;
+    this.deathRotation = 0;
+  }
+
+  /** Reset from death state */
+  resetDeath(): void {
+    this.isDead = false;
+    this.deathTimer = 0;
+    this.deathRotation = 0;
+    this.material.opacity = 1;
+    this.material.rotation = 0;
+  }
+
+  getIsDead(): boolean {
+    return this.isDead;
+  }
+
+  // ─── Hit Flash ───
+
+  /** Flash the sprite red for a brief moment */
+  flashHit(): void {
+    this.hitFlashTimer = this.hitFlashDuration;
+    this.material.color.set(0xff2222);
+  }
+
   // ─── Update ───
 
   update(dt: number): void {
+    // Death animation update
+    if (this.isDead) {
+      this.deathTimer += dt;
+      const t = Math.min(this.deathTimer / this.deathDuration, 1);
+
+      // Fall over (rotate 90 degrees)
+      const fallT = Math.min(this.deathTimer / 0.5, 1); // fall in 0.5s
+      this.deathRotation = fallT * (Math.PI / 2);
+      this.material.rotation = this.deathRotation;
+
+      // Fade out
+      this.material.opacity = Math.max(0, 1 - t);
+
+      if (t >= 1) {
+        this.sprite.visible = false;
+      }
+      return;
+    }
+
+    // Hit flash update
+    if (this.hitFlashTimer > 0) {
+      this.hitFlashTimer -= dt;
+      if (this.hitFlashTimer <= 0) {
+        this.hitFlashTimer = 0;
+        this.material.color.copy(this.originalColor);
+      }
+    }
+
     if (this.state.finished) return;
 
     const animConfig = this.config.animations[this.state.animation];

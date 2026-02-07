@@ -1,0 +1,24 @@
+# Build stage
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY package*.json ./
+COPY shared/package*.json ./shared/
+COPY server/package*.json ./server/
+RUN npm ci --workspace=shared --workspace=server
+COPY shared/ ./shared/
+COPY server/ ./server/
+RUN npm run build -w shared
+RUN npm run build -w server
+
+# Production stage
+FROM node:20-alpine
+WORKDIR /app
+COPY --from=builder /app/shared/dist ./shared/dist
+COPY --from=builder /app/shared/package.json ./shared/
+COPY --from=builder /app/server/dist ./server/dist
+COPY --from=builder /app/server/package.json ./server/
+COPY package*.json ./
+RUN npm ci --workspace=shared --workspace=server --omit=dev
+EXPOSE 3001
+USER node
+CMD ["node", "server/dist/index.js"]

@@ -64,13 +64,16 @@ function getBlockWithNeighbors(
 
 // Each face: [normalX, normalY, normalZ, axisU, axisV, axisW]
 // axisU/V are the two axes of the slice plane, axisW is the normal axis
+// flip: true when the default quad vertex order produces a cross product opposite to
+// the intended face normal. Flipping reverses the triangle winding so the face
+// is visible from the correct side.
 const FACES = [
-  { name: 'posX', nx: 1, ny: 0, nz: 0, uAxis: 2, vAxis: 1, wAxis: 0, dir: 1 },  // east
-  { name: 'negX', nx: -1, ny: 0, nz: 0, uAxis: 2, vAxis: 1, wAxis: 0, dir: -1 }, // west
-  { name: 'posY', nx: 0, ny: 1, nz: 0, uAxis: 0, vAxis: 2, wAxis: 1, dir: 1 },   // top
-  { name: 'negY', nx: 0, ny: -1, nz: 0, uAxis: 0, vAxis: 2, wAxis: 1, dir: -1 }, // bottom
-  { name: 'posZ', nx: 0, ny: 0, nz: 1, uAxis: 0, vAxis: 1, wAxis: 2, dir: 1 },   // north
-  { name: 'negZ', nx: 0, ny: 0, nz: -1, uAxis: 0, vAxis: 1, wAxis: 2, dir: -1 }, // south
+  { name: 'posX', nx: 1, ny: 0, nz: 0, uAxis: 2, vAxis: 1, wAxis: 0, dir: 1, flip: true },   // east
+  { name: 'negX', nx: -1, ny: 0, nz: 0, uAxis: 2, vAxis: 1, wAxis: 0, dir: -1, flip: false }, // west
+  { name: 'posY', nx: 0, ny: 1, nz: 0, uAxis: 0, vAxis: 2, wAxis: 1, dir: 1, flip: true },    // top
+  { name: 'negY', nx: 0, ny: -1, nz: 0, uAxis: 0, vAxis: 2, wAxis: 1, dir: -1, flip: false }, // bottom
+  { name: 'posZ', nx: 0, ny: 0, nz: 1, uAxis: 0, vAxis: 1, wAxis: 2, dir: 1, flip: false },   // north
+  { name: 'negZ', nx: 0, ny: 0, nz: -1, uAxis: 0, vAxis: 1, wAxis: 2, dir: -1, flip: true },  // south
 ] as const;
 
 const AXIS_SIZES = [CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z];
@@ -356,24 +359,40 @@ export function meshChunk(
             aoArr.push(baseAo[ci]!);
           }
 
-          // Triangle indices — flip based on AO to avoid diagonal artifacts
+          // Triangle indices — choose diagonal based on AO to avoid artifacts,
+          // and reverse winding for faces that need it so normals face outward.
           const a00 = baseAo[0]!;
           const a10 = baseAo[1]!;
           const a11 = baseAo[2]!;
           const a01 = baseAo[3]!;
 
-          if (a00 + a11 > a10 + a01) {
-            // Standard winding
-            indices.push(
-              vertexStart, vertexStart + 1, vertexStart + 2,
-              vertexStart, vertexStart + 2, vertexStart + 3,
-            );
+          if (face.flip) {
+            // Reversed winding: CW instead of CCW so the cross-product
+            // normal points in the intended face direction
+            if (a00 + a11 > a10 + a01) {
+              indices.push(
+                vertexStart, vertexStart + 2, vertexStart + 1,
+                vertexStart, vertexStart + 3, vertexStart + 2,
+              );
+            } else {
+              indices.push(
+                vertexStart + 1, vertexStart + 3, vertexStart + 2,
+                vertexStart + 1, vertexStart, vertexStart + 3,
+              );
+            }
           } else {
-            // Flipped winding
-            indices.push(
-              vertexStart + 1, vertexStart + 2, vertexStart + 3,
-              vertexStart + 1, vertexStart + 3, vertexStart,
-            );
+            // Normal winding (CCW)
+            if (a00 + a11 > a10 + a01) {
+              indices.push(
+                vertexStart, vertexStart + 1, vertexStart + 2,
+                vertexStart, vertexStart + 2, vertexStart + 3,
+              );
+            } else {
+              indices.push(
+                vertexStart + 1, vertexStart + 2, vertexStart + 3,
+                vertexStart + 1, vertexStart + 3, vertexStart,
+              );
+            }
           }
         }
       }

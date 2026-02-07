@@ -4,14 +4,15 @@
 import { db } from './connection.js';
 import { sql } from 'drizzle-orm';
 import { closeDatabase } from './connection.js';
+import { logger } from '../utils/logger.js';
 
 async function seed(): Promise<void> {
-  console.log('🌱 Running database seed...');
+  logger.info('Running database seed...');
 
   try {
     // Verify database connectivity
     await db.execute(sql`SELECT 1 AS ok`);
-    console.log('✅ Database connection verified.');
+    logger.info('Database connection verified');
 
     // Verify tables exist by querying information_schema
     const tables = await db.execute(sql`
@@ -39,16 +40,17 @@ async function seed(): Promise<void> {
     const missingTables = expectedTables.filter((t) => !tableNames.includes(t));
 
     if (missingTables.length > 0) {
-      console.warn(
-        `⚠️  Missing tables: ${missingTables.join(', ')}. Run migrations first: npm run db:migrate`,
+      logger.warn(
+        { missingTables },
+        `Missing tables: ${missingTables.join(', ')}. Run migrations first: npm run db:migrate`,
       );
     } else {
-      console.log(`✅ All ${expectedTables.length} expected tables found.`);
+      logger.info(`All ${expectedTables.length} expected tables found`);
     }
 
-    console.log('🌱 Seed complete.');
+    logger.info('Seed complete');
   } catch (error) {
-    console.error('❌ Seed failed:', error);
+    logger.error({ err: error }, 'Seed failed');
     process.exitCode = 1;
   } finally {
     await closeDatabase();

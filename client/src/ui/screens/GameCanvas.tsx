@@ -16,7 +16,7 @@ import { generateSpriteSheet } from '../../assets/SpriteGenerator';
 import { useGameStore } from '../../stores/useGameStore';
 import { useUIStore } from '../../stores/useUIStore';
 import { useChatStore } from '../../stores/useChatStore';
-import { SEA_LEVEL } from '@shared/constants/game';
+import { SEA_LEVEL, CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z } from '@shared/constants/game';
 import { HUD } from '../hud/HUD';
 import { InventoryPanel } from '../panels/InventoryPanel';
 import { CraftingPanel } from '../panels/CraftingPanel';
@@ -111,12 +111,29 @@ export const GameCanvas: React.FC = () => {
       camera,
     );
 
-    // Spawn player above sea level
-    const spawnY = SEA_LEVEL + 10;
-    playerController.setPosition(16, spawnY, 16);
-
     // ── Generate initial terrain ──
     chunkManager.generateLocalTestChunks(16, 16, 4);
+
+    // Spawn player ON TOP of the terrain surface
+    const spawnX = 16;
+    const spawnZ = 16;
+    const spawnCX = Math.floor(spawnX / CHUNK_SIZE_X);
+    const spawnCZ = Math.floor(spawnZ / CHUNK_SIZE_Z);
+    const localX = ((spawnX % CHUNK_SIZE_X) + CHUNK_SIZE_X) % CHUNK_SIZE_X;
+    const localZ = ((spawnZ % CHUNK_SIZE_Z) + CHUNK_SIZE_Z) % CHUNK_SIZE_Z;
+    const spawnChunkData = chunkManager.getChunkData(spawnCX, spawnCZ);
+
+    let spawnY = SEA_LEVEL + 10; // fallback
+    if (spawnChunkData) {
+      for (let y = CHUNK_SIZE_Y - 1; y >= 0; y--) {
+        const idx = localX + localZ * CHUNK_SIZE_X + y * CHUNK_SIZE_X * CHUNK_SIZE_Z;
+        if (spawnChunkData[idx] !== 0) {
+          spawnY = y + 1;
+          break;
+        }
+      }
+    }
+    playerController.setPosition(spawnX, spawnY + 0.1, spawnZ);
 
     // ── Pointer Lock tracking ──
     const handleLockChange = () => {
