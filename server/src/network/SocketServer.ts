@@ -13,7 +13,6 @@ import {
   VIEW_DISTANCE_CHUNKS,
   CHUNK_SIZE_X,
   ComponentType,
-  type InputPayload,
   type PositionComponent,
   type HealthComponent,
   type HungerComponent,
@@ -24,9 +23,20 @@ import {
   type EntitySnapshot,
 } from '@lineremain/shared';
 
+// ─── Handler Imports ───
+import { registerPlayerInputHandlers } from './handlers/PlayerInputHandler.js';
+import { registerChatHandlers } from './handlers/ChatHandler.js';
+import { registerChunkRequestHandlers } from './handlers/ChunkRequestHandler.js';
+import { registerCraftingHandlers } from './handlers/CraftingHandler.js';
+import { registerInventoryHandlers } from './handlers/InventoryHandler.js';
+import { registerBuildingHandlers } from './handlers/BuildingHandler.js';
+import { registerTeamHandlers, handlePlayerDisconnect, handlePlayerConnect } from './handlers/TeamHandler.js';
+import { registerBlockHandlers } from './handlers/BlockHandler.js';
+import { processRespawn } from '../game/systems/RespawnSystem.js';
+
 // ─── Types ───
 
-interface ConnectedPlayer {
+export interface ConnectedPlayer {
   socket: Socket;
   playerId: string;
   username: string;
@@ -47,10 +57,6 @@ interface DisconnectedPlayer {
 /** Grace period before removing disconnected player entity (seconds) */
 const DISCONNECT_GRACE_PERIOD = 30;
 
-// Combat log protection window (10 seconds) — used when checking recent damage on disconnect
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const COMBAT_LOG_WINDOW = 10_000;
-
 // ─── Socket Server Manager ───
 
 export class SocketServer {
@@ -68,11 +74,6 @@ export class SocketServer {
   initialize(): void {
     this.io.on('connection', (socket) => {
       this.handleConnection(socket);
-    });
-
-    // Register post-tick broadcasting
-    gameLoop.onPostTick((_world, _tick) => {
-      // StateBroadcaster handles this via its own hook
     });
 
     logger.info('SocketServer initialized');
@@ -129,13 +130,16 @@ export class SocketServer {
     // Send initial snapshot
     this.sendInitialSnapshot(player);
 
-    // Register message handlers
+    // Register all message handlers via dedicated handler modules
     this.registerMessageHandlers(socket, player);
 
     // Handle disconnect
     socket.on('disconnect', (reason) => {
       this.handleDisconnection(playerId, reason);
     });
+
+    // Notify team system of connection
+    handlePlayerConnect(this.io, playerId);
 
     logger.info(
       { playerId, username, entityId, socketId: socket.id, totalPlayers: this.connectedPlayers.size },
@@ -248,71 +252,47 @@ export class SocketServer {
   // ─── Register Message Handlers ───
 
   private registerMessageHandlers(socket: Socket, player: ConnectedPlayer): void {
-    // Player input
-    socket.on(ClientMessage.Input, (data: InputPayload) => {
-      if (typeof data.seq !== 'number') return;
-      player.lastInputSeq = data.seq;
-      gameLoop.queueInput(player.playerId, data);
-    });
+    const world = gameLoop.world;
 
-    // Chat
-    socket.on(ClientMessage.Chat, (data: { message: string }) => {
-      if (!data.message || typeof data.message !== 'string') return;
-      const trimmed = data.message.trim().slice(0, 256);
-      if (trimmed.length === 0) return;
+    // Helper to get playerId from a socket
+    const getPlayerId = (s: Socket): string | undefined => {
+      return s.data['playerId'] as string | undefined;
+    };
 
-      this.io.emit(ServerMessage.Chat, {
-        senderId: player.playerId,
-        senderName: player.username,
-        message: trimmed,
-        channel: 'global' as const,
-        timestamp: Date.now(),
-      });
-    });
+    // Helper to get player name from playerId
+    const getPlayerName = (pid: string): string => {
+      const p = this.connectedPlayers.get(pid);
+      return p?.username ?? 'Unknown';
+    };
 
-    // Chunk requests
-    socket.on(ClientMessage.ChunkRequest, (data: { chunkX: number; chunkZ: number }) => {
-      if (typeof data.chunkX !== 'number' || typeof data.chunkZ !== 'number') return;
+    // Register dedicated handlers
+    registerPlayerInputHandlers(this.io, socket, world, getPlayerId);
+    registerChatHandlers(this.io, socket, world, getPlayerId, getPlayerName);
+    registerChunkRequestHandlers(this.io, socket, world, getPlayerId);
+    registerCraftingHandlers(this.io, socket, world, getPlayerId);
+    registerInventoryHandlers(this.io, socket, world, getPlayerId);
+    registerBuildingHandlers(this.io, socket, world, getPlayerId);
+    registerTeamHandlers(this.io, socket, world, getPlayerId, getPlayerName);
+    registerBlockHandlers(this.io, socket, world, getPlayerId);
 
-      const chunk = gameLoop.world.chunkStore.getOrGenerate(
-        data.chunkX,
-        data.chunkZ,
-        gameLoop.world.terrainGenerator,
-      );
-
-      if (chunk) {
-        socket.emit(ServerMessage.ChunkData, {
-          chunkX: data.chunkX,
-          chunkZ: data.chunkZ,
-          blocks: Array.from(chunk),
-        });
-      }
-    });
-
-    // Respawn
+    // Respawn handler — creates fresh entity via RespawnSystem
     socket.on(ClientMessage.Respawn, () => {
-      const world = gameLoop.world;
-      const health = world.ecs.getComponent<HealthComponent>(player.entityId, ComponentType.Health);
-      if (health && health.current <= 0) {
-        // Reset player state
-        health.current = health.max;
-
-        const hunger = world.ecs.getComponent<HungerComponent>(player.entityId, ComponentType.Hunger);
-        if (hunger) hunger.current = hunger.max * 0.5;
-
-        const thirst = world.ecs.getComponent<ThirstComponent>(player.entityId, ComponentType.Thirst);
-        if (thirst) thirst.current = thirst.max * 0.5;
-
-        // Teleport to spawn
-        const pos = world.ecs.getComponent<PositionComponent>(player.entityId, ComponentType.Position);
-        if (pos) {
-          pos.x = 2048 + (Math.random() - 0.5) * 20;
-          pos.y = 50;
-          pos.z = 2048 + (Math.random() - 0.5) * 20;
-        }
-
-        logger.info({ playerId: player.playerId }, 'Player respawned');
+      // Only respawn if player entity was removed by DeathSystem
+      const existingEntity = world.getPlayerEntity(player.playerId);
+      if (existingEntity !== undefined) {
+        // Entity still exists — check if actually dead
+        const health = world.ecs.getComponent<HealthComponent>(existingEntity, ComponentType.Health);
+        if (!health || health.current > 0) return; // not dead
       }
+
+      // Create fresh player entity with starting gear
+      const newEntityId = processRespawn(world, player.playerId);
+      player.entityId = newEntityId;
+
+      // Send fresh snapshot to the respawned player
+      this.sendInitialSnapshot(player);
+
+      logger.info({ playerId: player.playerId, entityId: newEntityId }, 'Player respawned');
     });
   }
 
@@ -323,6 +303,9 @@ export class SocketServer {
     if (!player) return;
 
     this.connectedPlayers.delete(playerId);
+
+    // Notify team system
+    handlePlayerDisconnect(this.io, playerId);
 
     // Save player state
     this.savePlayerState(playerId, player.entityId).catch((err) => {

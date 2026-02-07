@@ -24,6 +24,19 @@ import { movementSystem } from './systems/MovementSystem.js';
 import { hungerSystem } from './systems/HungerSystem.js';
 import { thirstSystem } from './systems/ThirstSystem.js';
 import { temperatureSystem } from './systems/TemperatureSystem.js';
+import { aiSystem } from './systems/AISystem.js';
+import { combatSystem } from './systems/CombatSystem.js';
+import { projectileSystem } from './systems/ProjectileSystem.js';
+import { decaySystem } from './systems/DecaySystem.js';
+import { lootDespawnSystem } from './systems/LootDespawnSystem.js';
+import { lootSpawnSystem } from './systems/LootSpawnSystem.js';
+import { resourceRespawnSystem } from './systems/ResourceRespawnSystem.js';
+import { buildingPlacementSystem } from './systems/BuildingPlacementSystem.js';
+import { toolCupboardSystem } from './systems/ToolCupboardSystem.js';
+import { craftingSystem } from './systems/CraftingSystem.js';
+import { itemPickupSystem } from './systems/ItemPickupSystem.js';
+import { deathSystem } from './systems/DeathSystem.js';
+import { npcSpawnSystem } from './systems/NPCSpawnSystem.js';
 
 // ─── Input Queue ───
 
@@ -67,21 +80,53 @@ export class GameLoop {
     this.world.initialize(config.WORLD_SEED);
 
     // Register systems in execution order
+
     // 1. Day/night cycle (time progression)
     this.world.addSystem(dayNightSystem);
 
-    // 2. Physics (gravity, ground detection, water)
+    // 2. AI (NPC state machine: wander, chase, attack, flee)
+    this.world.addSystem(aiSystem);
+
+    // 3. Combat (melee attacks, damage resolution)
+    this.world.addSystem(combatSystem);
+
+    // 4. Projectiles (arrow/bullet flight, collision)
+    this.world.addSystem(projectileSystem);
+
+    // 5. Physics (gravity, ground detection, water)
     this.world.addSystem(physicsSystem);
 
-    // 3. Movement (collision resolution)
+    // 6. Movement (collision resolution)
     this.world.addSystem(movementSystem);
 
-    // 4. Survival systems
+    // 7. Survival systems
     this.world.addSystem(hungerSystem);
     this.world.addSystem(thirstSystem);
     this.world.addSystem(temperatureSystem);
 
-    logger.info('GameLoop initialized with all systems');
+    // 8. Crafting (process craft queues)
+    this.world.addSystem(craftingSystem);
+
+    // 9. Death detection (loot bag creation, death notifications)
+    this.world.addSystem(deathSystem);
+
+    // 10. Item auto-pickup (proximity collection)
+    this.world.addSystem(itemPickupSystem);
+
+    // 10. Building systems
+    this.world.addSystem(buildingPlacementSystem);
+    this.world.addSystem(toolCupboardSystem);
+    this.world.addSystem(decaySystem);
+
+    // 11. World maintenance
+    this.world.addSystem(resourceRespawnSystem);
+    this.world.addSystem(lootSpawnSystem);
+    this.world.addSystem(lootDespawnSystem);
+
+    // 12. NPC spawning (proximity-based creature population)
+    this.world.addSystem(npcSpawnSystem);
+
+    logger.info({ systemCount: 18 }, 'GameLoop initialized with all systems');
   }
 
   // ─── Input Queue ───

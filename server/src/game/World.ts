@@ -7,7 +7,6 @@ import { ChunkStore } from '../world/ChunkStore.js';
 import { TerrainGenerator } from '../world/TerrainGenerator.js';
 import {
   ComponentType,
-  DAY_LENGTH_SECONDS,
   PLAYER_INVENTORY_SLOTS,
   PLAYER_HEIGHT,
   PLAYER_WIDTH,
@@ -104,10 +103,6 @@ export class GameWorld {
   // ─── Update (called each server tick) ───
 
   update(dt: number): void {
-    // Advance day/night cycle
-    this.worldTime += dt / DAY_LENGTH_SECONDS;
-    if (this.worldTime >= 1) this.worldTime -= 1;
-
     // Flush stale query cache before systems run so mid-tick queries
     // are recomputed fresh but can still be reused within this tick
     this.ecs.flushQueryCache();
@@ -198,6 +193,10 @@ export class GameWorld {
 
   getPlayerEntity(playerId: string): EntityId | undefined {
     return this.playerEntityMap.get(playerId);
+  }
+
+  getPlayerEntityMap(): ReadonlyMap<string, EntityId> {
+    return this.playerEntityMap;
   }
 
   // ─── Building Entity Factory ───

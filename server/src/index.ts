@@ -11,6 +11,10 @@ import { apiRouter } from './api/router.js';
 import { authService } from './auth/AuthService.js';
 import { logger } from './utils/logger.js';
 import { setupGracefulShutdown } from './utils/gracefulShutdown.js';
+import { gameLoop } from './game/GameLoop.js';
+import { SocketServer } from './network/SocketServer.js';
+import { StateBroadcaster } from './network/StateBroadcaster.js';
+import { WorldSaver } from './world/WorldSaver.js';
 
 // ─── Express App ───
 
@@ -81,23 +85,44 @@ io.use((socket, next) => {
   }
 });
 
-// Socket.IO connection handler
-io.on('connection', (socket) => {
-  const playerId = socket.data['playerId'] as string;
-  const username = socket.data['username'] as string;
+// ─── Initialize Game Systems ───
 
-  logger.info({ playerId, username, socketId: socket.id }, 'Player connected');
+// 1. Initialize the game loop (creates world, registers all systems)
+gameLoop.initialize();
 
-  socket.on('disconnect', (reason) => {
-    logger.info({ playerId, username, socketId: socket.id, reason }, 'Player disconnected');
-  });
+// 2. Initialize the socket server (handles connections, player lifecycle, handlers)
+const socketServer = new SocketServer(io);
+socketServer.initialize();
 
-  // TODO: Register game event handlers
+// 3. Initialize state broadcaster (delta updates, player stats, world time)
+const stateBroadcaster = new StateBroadcaster(socketServer);
+stateBroadcaster.initialize();
+
+// 4. Initialize world saver
+const worldSaver = new WorldSaver();
+
+// 5. Wire save callback into game loop
+gameLoop.onSave(async () => {
+  await socketServer.saveAllPlayers();
+  await worldSaver.autoSave(gameLoop.world.chunkStore, [], []);
 });
+
+// 6. Start the game loop (20 ticks/sec)
+gameLoop.start();
+
+logger.info('Game systems initialized and running');
 
 // ─── Graceful Shutdown ───
 
-setupGracefulShutdown({ httpServer, io });
+setupGracefulShutdown({
+  httpServer,
+  io,
+  onSaveWorld: async () => {
+    gameLoop.stop();
+    await socketServer.shutdown();
+    await worldSaver.autoSave(gameLoop.world.chunkStore, [], []);
+  },
+});
 
 // ─── Start Server ───
 
@@ -109,7 +134,7 @@ httpServer.listen(config.PORT, () => {
       maxPlayers: config.MAX_PLAYERS,
       worldSize: config.WORLD_SIZE,
     },
-    `🎮 Lineremain server listening on port ${config.PORT}`,
+    `Lineremain server listening on port ${config.PORT}`,
   );
 });
 

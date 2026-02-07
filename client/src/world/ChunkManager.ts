@@ -341,6 +341,15 @@ export class ChunkManager {
     return data;
   }
 
+  /** Returns all opaque chunk meshes (for raycasting against terrain) */
+  getChunkMeshes(): THREE.Mesh[] {
+    const meshes: THREE.Mesh[] = [];
+    for (const [, chunk] of this.loadedChunks) {
+      if (chunk.mesh) meshes.push(chunk.mesh);
+    }
+    return meshes;
+  }
+
   // ─── Cleanup ───
 
   dispose(): void {

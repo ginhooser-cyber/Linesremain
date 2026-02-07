@@ -17,9 +17,18 @@ const LOW_THIRST_THRESHOLD = 50;
 const LOW_THIRST_DAMAGE = 3; // per check
 const DEHYDRATED_DAMAGE = 9; // per check when thirst == 0
 
+// ─── Tick Counter ───
+
+/** Run thirst checks every 60 ticks (3 seconds at 20 TPS) */
+const THIRST_CHECK_INTERVAL = 60;
+let tickCounter = 0;
+
 // ─── System ───
 
 export function thirstSystem(world: GameWorld, _dt: number): void {
+  tickCounter++;
+  if (tickCounter % THIRST_CHECK_INTERVAL !== 0) return;
+
   const entities = world.ecs.query(ComponentType.Thirst);
 
   for (const entityId of entities) {

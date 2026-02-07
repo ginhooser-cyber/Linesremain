@@ -2,26 +2,33 @@
 // Wires up the full game session: Engine, ChunkManager, Player Controller,
 // Particle System, Animation System, and Camera.
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 import * as THREE from 'three';
 import { Engine } from '../../engine/Engine';
 import { CameraController } from '../../engine/Camera';
 import { InputManager } from '../../engine/InputManager';
 import { ParticleSystem } from '../../engine/ParticleSystem';
+import { AudioManager } from '../../engine/AudioManager';
 import { ChunkManager } from '../../world/ChunkManager';
 import { PlayerRenderer } from '../../entities/PlayerRenderer';
 import { LocalPlayerController } from '../../entities/LocalPlayerController';
 import { AnimationSystem } from '../../systems/AnimationSystem';
+import { BlockInteraction } from '../../systems/BlockInteraction';
+import { BuildingPreview } from '../../entities/BuildingPreview';
 import { generateSpriteSheet } from '../../assets/SpriteGenerator';
-import { useGameStore } from '../../stores/useGameStore';
 import { useUIStore } from '../../stores/useUIStore';
 import { useChatStore } from '../../stores/useChatStore';
+import { socketClient } from '../../network/SocketClient';
 import { SEA_LEVEL, CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z } from '@shared/constants/game';
+import { BuildingPieceType, BuildingTier } from '@shared/types/buildings';
+import { ClientMessage } from '@shared/types/network';
+import { setOnBlockChanged } from '../../network/MessageHandler';
 import { HUD } from '../hud/HUD';
 import { InventoryPanel } from '../panels/InventoryPanel';
 import { CraftingPanel } from '../panels/CraftingPanel';
 import { BuildingPanel } from '../panels/BuildingPanel';
 import { MapPanel } from '../panels/MapPanel';
+import { SettingsPanel } from '../panels/SettingsPanel';
 
 // ─── Scene Setup Helpers ───
 
@@ -51,13 +58,25 @@ function createLighting(scene: THREE.Scene): void {
 export const GameCanvas: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<Engine | null>(null);
-  const screen = useGameStore((s) => s.screen);
+  const buildingPreviewRef = useRef<BuildingPreview | null>(null);
+  const chunkManagerRef = useRef<ChunkManager | null>(null);
+  const playerControllerRef = useRef<LocalPlayerController | null>(null);
   const setCursorLocked = useUIStore((s) => s.setCursorLocked);
   const toggleInventory = useUIStore((s) => s.toggleInventory);
   const toggleCrafting = useUIStore((s) => s.toggleCrafting);
   const toggleMap = useUIStore((s) => s.toggleMap);
   const toggleBuildingMode = useUIStore((s) => s.toggleBuildingMode);
+  const toggleSettings = useUIStore((s) => s.toggleSettings);
   const closeAll = useUIStore((s) => s.closeAll);
+
+  // Building panel callbacks
+  const handleSelectPiece = useCallback((pieceType: BuildingPieceType, tier: BuildingTier) => {
+    buildingPreviewRef.current?.activate(pieceType, tier);
+  }, []);
+
+  const handleCancelPreview = useCallback(() => {
+    buildingPreviewRef.current?.deactivate();
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -90,11 +109,22 @@ export const GameCanvas: React.FC = () => {
       chunkManager.onChunkDataReceived(cx, cz, data);
     });
 
+    // Wire server block updates to the chunk manager
+    setOnBlockChanged((wx, wy, wz, bt) => chunkManager.onBlockChanged(wx, wy, wz, bt));
+
     // ── Particle System ──
     const particleSystem = new ParticleSystem(scene);
 
     // ── Animation System ──
     const animationSystem = new AnimationSystem();
+
+    // ── Block Interaction System ──
+    const blockInteraction = new BlockInteraction(scene, camera, chunkManager, particleSystem);
+
+    // ── Building Preview ──
+    const buildingPreview = new BuildingPreview(scene, camera);
+    buildingPreviewRef.current = buildingPreview;
+    chunkManagerRef.current = chunkManager;
 
     // ── Player Sprite & Renderer ──
     const { canvas: spriteCanvas, config: spriteConfig } = generateSpriteSheet('#ffffff');
@@ -110,6 +140,7 @@ export const GameCanvas: React.FC = () => {
       chunkManager,
       camera,
     );
+    playerControllerRef.current = playerController;
 
     // ── Generate initial terrain ──
     chunkManager.generateLocalTestChunks(16, 16, 4);
@@ -158,6 +189,9 @@ export const GameCanvas: React.FC = () => {
         toggleInventory();
       } else if (e.key === 'Escape') {
         closeAll();
+      } else if (e.key === 'F1') {
+        e.preventDefault();
+        toggleSettings();
       } else if (!chatOpen) {
         // Only process letter keybinds when chat is closed
         if ((e.key === 'c' || e.key === 'C') && !e.ctrlKey && !e.metaKey) {
@@ -166,29 +200,39 @@ export const GameCanvas: React.FC = () => {
           toggleMap();
         } else if ((e.key === 'b' || e.key === 'B') && !e.ctrlKey && !e.metaKey) {
           toggleBuildingMode();
+        } else if ((e.key === 'r' || e.key === 'R') && !e.ctrlKey && !e.metaKey) {
+          buildingPreview.rotate();
         }
       }
     };
     window.addEventListener('keydown', handleUIKeys);
 
     // ── Pointer Lock on Click ──
+    const audio = AudioManager.getInstance();
     const handleClick = () => {
       if (!input.isPointerLocked()) {
         input.requestPointerLock(canvas);
-      } else {
-        // Left-click action: emit particles at crosshair target
-        particleSystem.emit({
-          position: playerController.getPosition().add(new THREE.Vector3(0, 1, 0)),
-          count: 5,
-          color: new THREE.Color(0xf0a500),
-          speed: 2.0,
-          spread: 0.5,
-          lifetime: 0.6,
-          size: 0.12,
-        });
+      } else if (buildingPreview.active && buildingPreview.isValid) {
+        // Place building piece
+        const data = buildingPreview.getPlacementData();
+        if (data) {
+          socketClient.emit(ClientMessage.BuildPlace, {
+            pieceType: data.pieceType,
+            tier: data.tier,
+            position: data.position,
+            rotation: data.rotation,
+          });
+          AudioManager.getInstance().play('blockPlace');
+        }
       }
+      // Initialize audio on first user gesture
+      audio.init();
     };
     canvas.addEventListener('click', handleClick);
+
+    // Prevent context menu so right-click can place blocks
+    const handleContextMenu = (e: Event) => e.preventDefault();
+    canvas.addEventListener('contextmenu', handleContextMenu);
 
     // ── Game Loop ──
     engine.onUpdate((dt) => {
@@ -201,6 +245,13 @@ export const GameCanvas: React.FC = () => {
 
       // Animation system
       animationSystem.update(dt);
+
+      // Block interaction (raycast, breaking, placing)
+      blockInteraction.update(dt);
+
+      // Building preview (ghost mesh follows camera)
+      const playerVec = new THREE.Vector3(pos.x, pos.y, pos.z);
+      buildingPreview.update(chunkManager.getChunkMeshes(), playerVec);
 
       // Particles
       particleSystem.update(dt);
@@ -224,11 +275,15 @@ export const GameCanvas: React.FC = () => {
       document.removeEventListener('pointerlockchange', handleLockChange);
       window.removeEventListener('keydown', handleUIKeys);
       canvas.removeEventListener('click', handleClick);
+      canvas.removeEventListener('contextmenu', handleContextMenu);
       cameraController.detach();
       playerRenderer.removeFromScene(scene);
+      buildingPreview.dispose();
+      blockInteraction.dispose();
       animationSystem.dispose();
       particleSystem.dispose();
       chunkManager.dispose();
+      audio.dispose();
       engine.dispose();
       input.dispose();
     };
@@ -244,16 +299,10 @@ export const GameCanvas: React.FC = () => {
       {/* Panels */}
       <InventoryPanel />
       <CraftingPanel />
-      <BuildingPanel />
+      <BuildingPanel onSelectPiece={handleSelectPiece} onCancelPreview={handleCancelPreview} />
       <MapPanel />
+      <SettingsPanel />
 
-      {/* Death overlay */}
-      {screen === 'dead' && (
-        <div style={styles.deathOverlay}>
-          <h2 style={styles.deathText}>YOU DIED</h2>
-          <p style={styles.deathSubtext}>Press R to respawn</p>
-        </div>
-      )}
     </div>
   );
 };
@@ -299,33 +348,3 @@ function generateLocalChunk(cx: number, cz: number): Uint8Array {
 
   return data;
 }
-
-// ─── Styles ───
-
-const styles: Record<string, React.CSSProperties> = {
-  deathOverlay: {
-    position: 'absolute',
-    inset: 0,
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: 'rgba(139, 0, 0, 0.4)',
-    pointerEvents: 'none',
-  },
-  deathText: {
-    color: '#FF4444',
-    fontSize: '48px',
-    fontWeight: 900,
-    fontFamily: 'Inter, system-ui, sans-serif',
-    letterSpacing: '8px',
-    margin: 0,
-  },
-  deathSubtext: {
-    color: 'rgba(255,255,255,0.6)',
-    fontSize: '16px',
-    fontFamily: 'Inter, system-ui, sans-serif',
-    letterSpacing: '2px',
-    marginTop: '16px',
-  },
-};

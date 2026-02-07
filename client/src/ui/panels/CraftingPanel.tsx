@@ -1,6 +1,6 @@
 // ─── Crafting Panel ───
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { useUIStore } from '../../stores/useUIStore';
 import { usePlayerStore } from '../../stores/usePlayerStore';
 import { ITEM_REGISTRY } from '@shared/constants/items';
@@ -8,6 +8,7 @@ import { RECIPE_REGISTRY } from '@shared/constants/recipes';
 import { CraftingTier } from '@shared/types/recipes';
 import type { RecipeDefinition } from '@shared/types/recipes';
 import { getItemIcon } from '../../utils/itemIcons';
+import { socketClient } from '../../network/SocketClient';
 import '../../styles/panels.css';
 
 const TIER_LABELS: Record<number, string> = {
@@ -86,6 +87,11 @@ const CraftingContent: React.FC = () => {
         (ing) => (itemCounts.get(ing.itemId) ?? 0) >= ing.quantity,
       )
     : false;
+
+  const handleCraft = useCallback(() => {
+    if (!selectedRecipe || !canCraft) return;
+    socketClient.emit('c:craft_start', { recipeId: selectedRecipe.id });
+  }, [selectedRecipe, canCraft]);
 
   return (
     <div className="crafting-layout">
@@ -189,7 +195,7 @@ const CraftingContent: React.FC = () => {
               </div>
             </div>
 
-            <button className="craft-btn" disabled={!canCraft}>
+            <button className="craft-btn" disabled={!canCraft} onClick={handleCraft}>
               Craft
             </button>
           </>

@@ -35,6 +35,7 @@ export interface ItemDefinition {
   hungerRestore?: number;
   thirstRestore?: number;
   gatherMultiplier?: number;
+  toolType?: string; // matches block toolRequired: 'axe', 'pickaxe', 'shovel'
   equipSlot?: EquipSlot;
 }
 

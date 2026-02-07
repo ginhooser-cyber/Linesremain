@@ -16,7 +16,9 @@ import {
   type NotificationPayload,
   type WorldTimePayload,
   type InventoryUpdatePayload,
+  type ChunkUpdatePayload,
 } from '@shared/types/network';
+import { CHUNK_SIZE_X, CHUNK_SIZE_Z } from '@shared/constants/game';
 
 // ─── Entity Store (client-side entity cache) ───
 
@@ -29,6 +31,16 @@ interface ClientEntity {
 const entities = new Map<number, ClientEntity>();
 let localPlayerEntityId: number | null = null;
 let lastServerTick = 0;
+
+// ─── Block Update Callback ───
+
+type BlockChangedCallback = (worldX: number, worldY: number, worldZ: number, blockType: number) => void;
+let onBlockChangedCallback: BlockChangedCallback | null = null;
+
+/** Register a callback for server-authoritative block changes (used by ChunkManager). */
+export function setOnBlockChanged(cb: BlockChangedCallback): void {
+  onBlockChangedCallback = cb;
+}
 
 // ─── Initialize Message Handlers ───
 
@@ -79,6 +91,12 @@ export function initializeMessageHandlers(): void {
   socketClient.on(ServerMessage.InventoryUpdate, (data) => {
     const inv = data as InventoryUpdatePayload;
     handleInventoryUpdate(inv);
+  });
+
+  // Chunk block updates (from other players breaking/placing)
+  socketClient.on(ServerMessage.ChunkUpdate, (data) => {
+    const update = data as ChunkUpdatePayload;
+    handleChunkUpdate(update);
   });
 }
 
@@ -202,6 +220,18 @@ function handleInventoryUpdate(inv: InventoryUpdatePayload): void {
   const store = usePlayerStore.getState();
   store.setInventory(inv.slots);
   store.setEquipment(inv.equipment as Record<string, ItemStack | null>);
+}
+
+// ─── Chunk Update Handler ───
+
+function handleChunkUpdate(update: ChunkUpdatePayload): void {
+  if (!onBlockChangedCallback) return;
+
+  for (const block of update.updates) {
+    const worldX = update.chunkX * CHUNK_SIZE_X + block.localX;
+    const worldZ = update.chunkZ * CHUNK_SIZE_Z + block.localZ;
+    onBlockChangedCallback(worldX, block.localY, worldZ, block.blockType);
+  }
 }
 
 // ─── Exported State ───

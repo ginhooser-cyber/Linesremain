@@ -1,7 +1,6 @@
 // ─── Network Message Types ───
 
 import type { ItemStack } from './items.js';
-import type { PositionComponent } from './entities.js';
 
 // ─── Client → Server Messages ───
 
@@ -90,16 +89,15 @@ export interface InventorySplitPayload {
 }
 
 export interface BuildPlacePayload {
-  pieceType: number;
-  position: PositionComponent;
+  pieceType: string;
+  tier: number;
+  position: { x: number; y: number; z: number };
   rotation: number;
-  snapEntityId?: number;
-  snapPointIndex?: number;
 }
 
 export interface BuildUpgradePayload {
   entityId: number;
-  targetTier: number;
+  newTier: number;
 }
 
 export interface BuildDemolishPayload {

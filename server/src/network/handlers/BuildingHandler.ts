@@ -7,6 +7,7 @@ import type { GameWorld } from '../../game/World.js';
 import {
   BuildingPieceType,
   BuildingTier,
+  ClientMessage,
   type EntityId,
 } from '@lineremain/shared';
 import {
@@ -78,8 +79,8 @@ export function registerBuildingHandlers(
   world: GameWorld,
   getPlayerId: (socket: Socket) => string | undefined,
 ): void {
-  // ─── build:place ───
-  socket.on('build:place', (payload: BuildPlacePayload, callback?: (res: BuildResponse) => void) => {
+  // ─── Build Place ───
+  socket.on(ClientMessage.BuildPlace, (payload: BuildPlacePayload, callback?: (res: BuildResponse) => void) => {
     const playerId = getPlayerId(socket);
     if (!playerId) {
       callback?.({ success: false, error: 'Not authenticated' });
@@ -159,8 +160,8 @@ export function registerBuildingHandlers(
     }
   });
 
-  // ─── build:upgrade ───
-  socket.on('build:upgrade', (payload: BuildUpgradePayload, callback?: (res: BuildResponse) => void) => {
+  // ─── Build Upgrade ───
+  socket.on(ClientMessage.BuildUpgrade, (payload: BuildUpgradePayload, callback?: (res: BuildResponse) => void) => {
     const playerId = getPlayerId(socket);
     if (!playerId) {
       callback?.({ success: false, error: 'Not authenticated' });
@@ -202,8 +203,8 @@ export function registerBuildingHandlers(
     }
   });
 
-  // ─── build:demolish ───
-  socket.on('build:demolish', (payload: BuildDemolishPayload, callback?: (res: BuildResponse) => void) => {
+  // ─── Build Demolish ───
+  socket.on(ClientMessage.BuildDemolish, (payload: BuildDemolishPayload, callback?: (res: BuildResponse) => void) => {
     const playerId = getPlayerId(socket);
     if (!playerId) {
       callback?.({ success: false, error: 'Not authenticated' });

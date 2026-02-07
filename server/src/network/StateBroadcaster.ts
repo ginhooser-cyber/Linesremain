@@ -21,7 +21,9 @@ import {
   type DeltaPayload,
   type PlayerStatsPayload,
   type WorldTimePayload,
+  type DeathPayload,
 } from '@lineremain/shared';
+import { drainDeathNotifications } from '../game/systems/DeathSystem.js';
 
 // ─── Types ───
 
@@ -82,6 +84,9 @@ export class StateBroadcaster {
   // ─── Per-Tick Handler ───
 
   private onTick(world: GameWorld, tick: number): void {
+    // Broadcast death notifications (every tick — deaths should be immediate)
+    this.broadcastDeathNotifications();
+
     // Delta broadcast at configured interval
     if (tick % DELTA_INTERVAL === 0) {
       this.broadcastDeltas(world, tick);
@@ -289,5 +294,22 @@ export class StateBroadcaster {
     };
 
     this.socketServer.broadcast(ServerMessage.WorldTime, payload);
+  }
+
+  // ─── Death Notification Broadcast ───
+
+  private broadcastDeathNotifications(): void {
+    const deaths = drainDeathNotifications();
+    if (deaths.length === 0) return;
+
+    for (const death of deaths) {
+      const payload: DeathPayload = {
+        killerId: null,
+        killerName: null,
+        cause: death.cause,
+      };
+
+      this.socketServer.emitToPlayer(death.playerId, ServerMessage.Death, payload);
+    }
   }
 }

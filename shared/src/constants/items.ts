@@ -37,12 +37,12 @@ export const ITEM_REGISTRY: Record<number, ItemDefinition> = {
   // TOOLS (21-28)
   // ═══════════════════════════════════════
   21: { id: 21, name: 'Rock', category: ItemCategory.Tool, maxStack: 1, description: 'A basic rock. Can be used to gather resources.', durability: 50, damage: 5, gatherMultiplier: 1.0, equipSlot: EquipSlot.Held },
-  22: { id: 22, name: 'Stone Hatchet', category: ItemCategory.Tool, maxStack: 1, description: 'A crude hatchet for chopping wood.', durability: 150, damage: 10, gatherMultiplier: 2.0, equipSlot: EquipSlot.Held },
-  23: { id: 23, name: 'Stone Pickaxe', category: ItemCategory.Tool, maxStack: 1, description: 'A crude pickaxe for mining stone and ore.', durability: 150, damage: 10, gatherMultiplier: 2.0, equipSlot: EquipSlot.Held },
-  24: { id: 24, name: 'Metal Hatchet', category: ItemCategory.Tool, maxStack: 1, description: 'A sturdy hatchet for efficient wood gathering.', durability: 300, damage: 15, gatherMultiplier: 4.0, equipSlot: EquipSlot.Held },
-  25: { id: 25, name: 'Metal Pickaxe', category: ItemCategory.Tool, maxStack: 1, description: 'A sturdy pickaxe for efficient mining.', durability: 300, damage: 15, gatherMultiplier: 4.0, equipSlot: EquipSlot.Held },
-  26: { id: 26, name: 'Salvaged Axe', category: ItemCategory.Tool, maxStack: 1, description: 'High-end axe made from salvaged parts.', durability: 500, damage: 20, gatherMultiplier: 6.0, equipSlot: EquipSlot.Held },
-  27: { id: 27, name: 'Salvaged Icepick', category: ItemCategory.Tool, maxStack: 1, description: 'High-end pickaxe made from salvaged parts.', durability: 500, damage: 20, gatherMultiplier: 6.0, equipSlot: EquipSlot.Held },
+  22: { id: 22, name: 'Stone Hatchet', category: ItemCategory.Tool, maxStack: 1, description: 'A crude hatchet for chopping wood.', durability: 150, damage: 10, gatherMultiplier: 2.0, toolType: 'axe', equipSlot: EquipSlot.Held },
+  23: { id: 23, name: 'Stone Pickaxe', category: ItemCategory.Tool, maxStack: 1, description: 'A crude pickaxe for mining stone and ore.', durability: 150, damage: 10, gatherMultiplier: 2.0, toolType: 'pickaxe', equipSlot: EquipSlot.Held },
+  24: { id: 24, name: 'Metal Hatchet', category: ItemCategory.Tool, maxStack: 1, description: 'A sturdy hatchet for efficient wood gathering.', durability: 300, damage: 15, gatherMultiplier: 4.0, toolType: 'axe', equipSlot: EquipSlot.Held },
+  25: { id: 25, name: 'Metal Pickaxe', category: ItemCategory.Tool, maxStack: 1, description: 'A sturdy pickaxe for efficient mining.', durability: 300, damage: 15, gatherMultiplier: 4.0, toolType: 'pickaxe', equipSlot: EquipSlot.Held },
+  26: { id: 26, name: 'Salvaged Axe', category: ItemCategory.Tool, maxStack: 1, description: 'High-end axe made from salvaged parts.', durability: 500, damage: 20, gatherMultiplier: 6.0, toolType: 'axe', equipSlot: EquipSlot.Held },
+  27: { id: 27, name: 'Salvaged Icepick', category: ItemCategory.Tool, maxStack: 1, description: 'High-end pickaxe made from salvaged parts.', durability: 500, damage: 20, gatherMultiplier: 6.0, toolType: 'pickaxe', equipSlot: EquipSlot.Held },
   28: { id: 28, name: 'Hammer', category: ItemCategory.Tool, maxStack: 1, description: 'Used to build and repair structures.', durability: 500, damage: 5, equipSlot: EquipSlot.Held },
 
   // ═══════════════════════════════════════

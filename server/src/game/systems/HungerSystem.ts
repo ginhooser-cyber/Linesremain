@@ -26,9 +26,18 @@ const LOW_HUNGER_THRESHOLD = 100;
 const LOW_HUNGER_DAMAGE = 3; // per check (1/sec)
 const STARVE_DAMAGE = 9; // per check (3/sec) when hunger == 0
 
+// ─── Tick Counter ───
+
+/** Run hunger checks every 60 ticks (3 seconds at 20 TPS) */
+const HUNGER_CHECK_INTERVAL = 60;
+let tickCounter = 0;
+
 // ─── System ───
 
 export function hungerSystem(world: GameWorld, _dt: number): void {
+  tickCounter++;
+  if (tickCounter % HUNGER_CHECK_INTERVAL !== 0) return;
+
   const entities = world.ecs.query(ComponentType.Hunger);
 
   for (const entityId of entities) {

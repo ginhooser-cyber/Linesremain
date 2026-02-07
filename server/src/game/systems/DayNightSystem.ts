@@ -7,6 +7,7 @@ import { DAY_LENGTH_SECONDS } from '@lineremain/shared';
 // ─── State ───
 
 let tickCounter = 0;
+let dayCount = 1;
 
 // ─── System ───
 
@@ -15,6 +16,7 @@ export function dayNightSystem(world: GameWorld, dt: number): void {
   world.worldTime += dt / DAY_LENGTH_SECONDS;
   if (world.worldTime >= 1) {
     world.worldTime -= 1;
+    dayCount++;
   }
 
   tickCounter++;
@@ -34,11 +36,10 @@ export function isDaytime(world: GameWorld): boolean {
 }
 
 /**
- * Get the current day number based on accumulated time.
+ * Get the current day number (starts at 1, increments each full day cycle).
  */
-export function getDayNumber(world: GameWorld): number {
-  // dayNumber is tracked externally — worldTime wraps 0-1 per day
-  return Math.floor(world.worldTime) + 1;
+export function getDayNumber(_world: GameWorld): number {
+  return dayCount;
 }
 
 /**
