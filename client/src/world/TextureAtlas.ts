@@ -553,6 +553,7 @@ export function createTextureAtlas(): THREE.Texture {
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
   texture.generateMipmaps = false;
+  texture.flipY = false; // Canvas Y-axis matches our UV layout (v=0 → top row)
 
   cachedTexture = texture;
   return texture;
